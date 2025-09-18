@@ -2,7 +2,7 @@
 import { useRef, useState, useEffect } from "react";
 import { FORMATS, LIMITS } from "@/lib/constants";
 import { formatBytes } from "@/lib/format";
-import { convertBatch } from "@/services/conversion";
+import { convertFromBlobUrls } from "@/services/conversion";
 import {
   UploadIcon,
   Spinner,
@@ -12,6 +12,7 @@ import {
   TrashIcon,
   ImageStackIcon,
 } from "@/components/icons/Icons";
+import { upload } from "@vercel/blob/client";
 
 export default function UploadForm() {
   const inputRef = useRef(null);
@@ -20,6 +21,11 @@ export default function UploadForm() {
   const [dragActive, setDragActive] = useState(false);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
+
+  // Progreso
+  const [showProgress, setShowProgress] = useState(false);
+  const [progress, setProgress] = useState(0); // 0..100
+  const [stage, setStage] = useState(null); // 'upload' | 'convert' | null
 
   useEffect(() => {
     return () => files.forEach((f) => URL.revokeObjectURL(f.url));
@@ -98,17 +104,68 @@ export default function UploadForm() {
     }
 
     setLoading(true);
+    setShowProgress(true);
+    setStage("upload");
+    setProgress(0);
+
     const isPdf = format === "pdf";
-    setStatus(
-      isPdf
-        ? `Generando PDF con ${files.length} página(s)…`
-        : files.length > 1
-          ? `Convirtiendo ${files.length} imagen(es) y preparando ZIP…`
-          : `Convirtiendo imagen…`
-    );
 
     try {
-      const { blob, filename } = await convertBatch(files.map((f) => f.file), format);
+      // 1) Subida a Vercel Blob con progreso agregado
+      setStatus(`Subiendo ${files.length} archivo(s) a almacenamiento seguro…`);
+
+      const totalBytes = files.reduce((acc, { file }) => acc + (file?.size || 0), 0) || 1;
+      const uploadedByIndex = new Array(files.length).fill(0);
+
+      const uploadedResults = [];
+      // Subimos secuencialmente para tener progreso estable y simple
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i].file;
+
+        let usedPerFileFallback = true;
+        const result = await upload(f.name, f, {
+          access: "public",
+          handleUploadUrl: "/api/blob/upload",
+          // onUploadProgress es soportado por @vercel/blob/client.
+          // Si no dispara, usamos fallback por archivo.
+          onUploadProgress: (ev) => {
+            const loaded = Number(ev?.loaded ?? ev?.bytesUploaded ?? 0);
+            if (loaded > 0) usedPerFileFallback = false;
+            uploadedByIndex[i] = Math.min(loaded, f.size || 0);
+            const sum = uploadedByIndex.reduce((a, b) => a + b, 0);
+            const pct = Math.max(0, Math.min(100, Math.round((sum / totalBytes) * 90))); // 0–90% durante subida
+            setProgress(pct);
+          },
+        });
+
+        // Fallback si no hubo eventos de progreso: avanza por archivo
+        if (usedPerFileFallback) {
+          uploadedByIndex[i] = f.size || 0;
+          const sum = uploadedByIndex.reduce((a, b) => a + b, 0);
+          const pct = Math.max(0, Math.min(100, Math.round((sum / totalBytes) * 90)));
+          setProgress(pct);
+        }
+
+        uploadedResults.push(result);
+      }
+
+      const urls = uploadedResults.map((u) => u.url);
+
+      // 2) Conversión
+      setStage("convert");
+      // Avanzamos visualmente al 95% mientras convierte
+      setProgress((p) => (p < 95 ? 95 : p));
+      setStatus(
+        isPdf
+          ? `Generando PDF con ${files.length} página(s)…`
+          : files.length > 1
+          ? `Convirtiendo ${files.length} imagen(es) y preparando ZIP…`
+          : `Convirtiendo imagen…`
+      );
+
+      const { blob, filename } = await convertFromBlobUrls(urls, format);
+
+      // 3) Descargar resultado
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       a.download = filename;
@@ -116,12 +173,17 @@ export default function UploadForm() {
       a.click();
       a.remove();
 
+      setProgress(100);
       setStatus("Descarga lista.");
     } catch (err) {
       console.error(err);
-      setStatus(err.message || "Error en la conversión.");
-      alert(err.message || "Error en la conversión.");
+      const msg = err?.message || "Error en la conversión.";
+      setStatus(msg);
+      alert(msg);
     } finally {
+      setStage(null);
+      // Espera breve para que el 100% sea visible
+      setTimeout(() => setShowProgress(false), 400);
       setLoading(false);
     }
   };
@@ -317,7 +379,6 @@ export default function UploadForm() {
               </>
             ) : (
               <>
-                {/* Ícono ZIP solo si no es PDF y hay varias */}
                 {format !== "pdf" && files.length > 1 ? <ZipIcon className="h-4 w-4" /> : null}
                 {submitLabel}
               </>
@@ -325,6 +386,32 @@ export default function UploadForm() {
           </button>
         </div>
       </div>
+
+      {/* 3.1) Barra de progreso / Estado visual */}
+      {showProgress && (
+        <div className="flex flex-col gap-2 px-2 sm:px-4">
+          <div className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">
+            <span>
+              {stage === "upload" ? "Subiendo archivos…" : stage === "convert" ? "Convirtiendo…" : "Procesando…"}
+            </span>
+            <span className="tabular-nums">{progress}%</span>
+          </div>
+          <div className="w-full h-2.5 rounded-full bg-gray-200 dark:bg-gray-800 overflow-hidden">
+            <div
+              className={[
+                "h-full transition-all duration-200",
+                stage === "convert" ? "bg-gradient-to-r from-indigo-500 via-purple-500 to-violet-500 animate-pulse"
+                                    : "bg-gradient-to-r from-cyan-500 to-blue-600",
+              ].join(" ")}
+              style={{ width: `${progress}%` }}
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={progress}
+            />
+          </div>
+        </div>
+      )}
 
       {/* 4) Estado/ayuda */}
       <p className="text-center text-xs text-gray-500 dark:text-gray-400 min-h-[1rem]" aria-live="polite">

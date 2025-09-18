@@ -48,3 +48,33 @@ export async function convertBatch(files, format) {
 
   return { blob, filename, contentType };
 }
+
+// NUEVO: conversión desde URLs (tras subir a Vercel Blob)
+export async function convertFromBlobUrls(urls, format) {
+  const res = await fetch("/api/convert-from-urls", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ urls, format }),
+  });
+
+  if (!res.ok) {
+    let msg = humanizeError(res);
+    try {
+      const data = await res.json();
+      if (data?.error) msg = data.error;
+    } catch {}
+    throw new Error(msg);
+  }
+
+  const blob = await res.blob();
+  const disposition = res.headers.get("content-disposition") || "";
+  const contentType = res.headers.get("content-type") || "application/octet-stream";
+  let filename = getFilenameFromDisposition(disposition);
+
+  const isZip = contentType.includes("zip");
+  if (!filename) {
+    filename = isZip ? `convertidos_${format}.zip` : `convertido.${format}`;
+  }
+
+  return { blob, filename, contentType };
+}
