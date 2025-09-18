@@ -29,6 +29,29 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
+## Avatar Upload Feature
+
+This application includes a file upload feature using Vercel Blob for handling larger files (>4.5MB) that exceed platform body size limits.
+
+### Usage
+
+Visit `/avatar/upload` to access the upload page where you can upload image files directly to Vercel Blob storage.
+
+### Local Development
+
+When running locally, the `onUploadCompleted` webhook requires a public callback URL. Use a tunnel service like ngrok and set the callback URL in your `.env.local`:
+
+```bash
+VERCEL_BLOB_CALLBACK_URL=https://abc123.ngrok-free.app
+```
+
+### Supported File Types
+
+- JPEG (.jpg, .jpeg)
+- PNG (.png)
+- WebP (.webp)
+- AVIF (.avif)
+
 ## Deploy on Vercel
 
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
