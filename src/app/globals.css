@@ -1,17 +1,12 @@
-/* globals.css */
+@import "tailwindcss";
 
-/* Tailwind v4: importa preflight y utilidades */
-@import "tailwindcss/preflight";
-@import "tailwindcss/utilities";
-
-/* Variables y modo oscuro */
+/* Tokens de color y fuentes */
 :root {
   --background: #ffffff;
   --foreground: #171717;
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
 }
 
+/* Dark scheme */
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
@@ -26,9 +21,9 @@ html, body {
 
 body {
   color: var(--foreground);
-  font-family: var(--font-sans), ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  /* Nota: el font-family lo aplicaremos con next/font (className) en layout */
   background: linear-gradient(180deg, #ffffff 0%, #f5f7fb 100%);
-  background-attachment: fixed; /* suaviza el gradiente en scroll */
+  background-attachment: fixed;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -36,4 +31,11 @@ body {
     background: linear-gradient(180deg, #0b1220 0%, #0a0f1b 100%);
     background-attachment: fixed;
   }
+}
+
+/* Normaliza los SVG para que no cambien de aspecto por preflight/orden */
+svg {
+  display: inline-block;        /* evita “saltos” vertical-align en algunos resets */
+  vertical-align: middle;
+  color: inherit;               /* que sigan el texto */
 }
