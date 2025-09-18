@@ -2,12 +2,20 @@ import JSZip from "jszip";
 import sharp from "sharp";
 import { PDFDocument } from "pdf-lib";
 
+// Afinar sharp para serverless
+sharp.simd(true);
+sharp.concurrency(1);
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Aumenta si tu plan de Vercel lo permite (Pro/Enterprise)
+export const maxDuration = 60;
 
 const MAX_FILES = 20;
 const MAX_FILE_SIZE = 8 * 1024 * 1024;   // 8 MB por archivo
 const MAX_TOTAL_SIZE = 80 * 1024 * 1024; // 80 MB por lote
+// Nuevo: cap de dimensión para acelerar conversión
+const MAX_DIMENSION = 4096; // px
 
 const OUTPUT_MIME = {
   png: "image/png",
@@ -124,7 +132,6 @@ export async function POST(req) {
 
 async function imagesToSinglePdf(files) {
   const pdfDoc = await PDFDocument.create();
-  // Nombre: si hay una, hereda; si hay varias, "imagenes.pdf"
   const first = files[0];
   const firstBase = sanitizeFilename(String(first?.name || "imagen").replace(/\.[^.]+$/g, "")) || "imagen";
   const filename = files.length === 1 ? `${firstBase}.pdf` : "imagenes.pdf";
@@ -132,19 +139,22 @@ async function imagesToSinglePdf(files) {
   for (const f of files) {
     const input = Buffer.from(await f.arrayBuffer());
 
-    // Detecta si es jpg; si no, conviente a PNG para preservar transparencia.
+    // Preproceso + redimensionado para PDF
     const meta = await sharp(input).metadata();
     const isJpeg = (meta.format || "").toLowerCase() === "jpeg" || (meta.format || "").toLowerCase() === "jpg";
 
     const processed = isJpeg
-      ? await sharp(input).rotate().jpeg({ quality: 90 }).toBuffer()
-      : await sharp(input).rotate().png({ compressionLevel: 6 }).toBuffer();
+      ? await sharp(input).rotate().resize({
+          width: MAX_DIMENSION, height: MAX_DIMENSION, fit: "inside", withoutEnlargement: true,
+        }).jpeg({ quality: 90, chromaSubsampling: "4:2:0" }).toBuffer()
+      : await sharp(input).rotate().resize({
+          width: MAX_DIMENSION, height: MAX_DIMENSION, fit: "inside", withoutEnlargement: true,
+        }).png({ compressionLevel: 5, adaptiveFiltering: true }).toBuffer();
 
     const image = isJpeg
       ? await pdfDoc.embedJpg(processed)
       : await pdfDoc.embedPng(processed);
 
-    // Tamaño de la página igual al de la imagen integrada
     const page = pdfDoc.addPage([image.width, image.height]);
     page.drawImage(image, {
       x: 0,
@@ -159,19 +169,30 @@ async function imagesToSinglePdf(files) {
 }
 
 async function convertWithSharp(inputBuffer, format) {
-  let pipeline = sharp(inputBuffer, { failOn: "none" }).rotate();
+  // Redimensiona para acelerar la codificación
+  let pipeline = sharp(inputBuffer, { failOn: "none" })
+    .rotate()
+    .resize({
+      width: MAX_DIMENSION,
+      height: MAX_DIMENSION,
+      fit: "inside",
+      withoutEnlargement: true,
+    });
+
   switch (format) {
     case "png":
-      pipeline = pipeline.png();
+      pipeline = pipeline.png({ compressionLevel: 5, adaptiveFiltering: true });
       break;
     case "jpeg":
-      pipeline = pipeline.jpeg({ quality: 82 });
+      pipeline = pipeline.jpeg({ quality: 80, chromaSubsampling: "4:2:0", mozjpeg: false });
       break;
     case "webp":
-      pipeline = pipeline.webp({ quality: 82 });
+      // effort (si tu versión de sharp lo soporta) puede ayudar; si no, se ignorará.
+      pipeline = pipeline.webp({ quality: 78, smartSubsample: true });
       break;
     case "avif":
-      pipeline = pipeline.avif({ quality: 50 });
+      // CLAVE: baja effort y calidad moderada
+      pipeline = pipeline.avif({ quality: 45, effort: 2, chromaSubsampling: "4:2:0" });
       break;
     default:
       throw new Error("Formato no soportado.");

@@ -2,12 +2,20 @@ import JSZip from "jszip";
 import sharp from "sharp";
 import { PDFDocument } from "pdf-lib";
 
+// Afinar sharp para serverless
+sharp.simd(true);
+sharp.concurrency(1);
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Aumenta si tu plan de Vercel lo permite (Pro/Enterprise)
+export const maxDuration = 60;
 
 const MAX_FILES = 20;
 const MAX_FILE_SIZE = 8 * 1024 * 1024;   // 8 MB por archivo
 const MAX_TOTAL_SIZE = 80 * 1024 * 1024; // 80 MB por lote
+// Nuevo: cap de dimensión para acelerar conversión
+const MAX_DIMENSION = 4096; // px
 
 const OUTPUT_MIME = {
   png: "image/png",
@@ -35,7 +43,7 @@ export async function POST(req) {
       return jsonError(400, "Formato no soportado.");
     }
 
-    // Descargamos todos los blobs desde Vercel Blob
+    // Descarga de blobs (secuencial para memoria estable; puedes paralelizar con límite si lo prefieres)
     const incoming = [];
     let totalSize = 0;
     const tooBig = [];
@@ -145,13 +153,16 @@ async function imagesToSinglePdfFromBuffers(items) {
   for (const it of items) {
     const input = it.buffer;
 
-    // Detecta si es jpg; si no, convierte a PNG para preservar transparencia.
     const meta = await sharp(input).metadata();
     const isJpeg = (meta.format || "").toLowerCase() === "jpeg" || (meta.format || "").toLowerCase() === "jpg";
 
     const processed = isJpeg
-      ? await sharp(input).rotate().jpeg({ quality: 90 }).toBuffer()
-      : await sharp(input).rotate().png({ compressionLevel: 6 }).toBuffer();
+      ? await sharp(input).rotate().resize({
+          width: MAX_DIMENSION, height: MAX_DIMENSION, fit: "inside", withoutEnlargement: true,
+        }).jpeg({ quality: 90, chromaSubsampling: "4:2:0" }).toBuffer()
+      : await sharp(input).rotate().resize({
+          width: MAX_DIMENSION, height: MAX_DIMENSION, fit: "inside", withoutEnlargement: true,
+        }).png({ compressionLevel: 5, adaptiveFiltering: true }).toBuffer();
 
     const image = isJpeg
       ? await pdfDoc.embedJpg(processed)
@@ -171,19 +182,27 @@ async function imagesToSinglePdfFromBuffers(items) {
 }
 
 async function convertWithSharp(inputBuffer, format) {
-  let pipeline = sharp(inputBuffer, { failOn: "none" }).rotate();
+  let pipeline = sharp(inputBuffer, { failOn: "none" })
+    .rotate()
+    .resize({
+      width: MAX_DIMENSION,
+      height: MAX_DIMENSION,
+      fit: "inside",
+      withoutEnlargement: true,
+    });
+
   switch (format) {
     case "png":
-      pipeline = pipeline.png();
+      pipeline = pipeline.png({ compressionLevel: 5, adaptiveFiltering: true });
       break;
     case "jpeg":
-      pipeline = pipeline.jpeg({ quality: 82 });
+      pipeline = pipeline.jpeg({ quality: 80, chromaSubsampling: "4:2:0", mozjpeg: false });
       break;
     case "webp":
-      pipeline = pipeline.webp({ quality: 82 });
+      pipeline = pipeline.webp({ quality: 78, smartSubsample: true });
       break;
     case "avif":
-      pipeline = pipeline.avif({ quality: 50 });
+      pipeline = pipeline.avif({ quality: 45, effort: 2, chromaSubsampling: "4:2:0" });
       break;
     default:
       throw new Error("Formato no soportado.");
