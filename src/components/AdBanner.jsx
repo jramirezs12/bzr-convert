@@ -4,6 +4,7 @@ import { useAdsense } from "@/hooks/useAdsense";
 
 export default function AdBanner() {
   const { failed } = useAdsense();
+  const isProd = typeof window !== "undefined" && process.env.NODE_ENV === "production";
 
   return (
     <div className="w-full flex justify-center">
@@ -13,7 +14,7 @@ export default function AdBanner() {
           style={{ display: "block", width: "100%", height: "100%" }}
           data-ad-client={ENV.ADSENSE_CLIENT}
           data-ad-slot={ENV.ADSENSE_SLOT}
-          data-adtest={ENV.ADSENSE_TEST ? "on" : undefined}
+          {...(!isProd ? { "data-adtest": "on" } : {})}
           data-full-width-responsive="true"
         />
         {failed && (
