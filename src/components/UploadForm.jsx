@@ -37,13 +37,29 @@ export default function UploadForm() {
   return (
     <form
       onSubmit={handleSubmit}
-      className="bg-white shadow-md rounded-2xl p-6 max-w-xl w-full flex flex-col items-center border border-gray-200"
+      className="bg-white shadow-xl rounded-3xl p-8 max-w-2xl w-full flex flex-col items-center border border-gray-100 backdrop-blur-sm"
     >
       {/* Zona de drag & drop */}
-      <label className="w-full h-48 flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-blue-500 transition">
-        <span className="text-gray-500">
-          {file ? file.name : "Arrastra tu imagen aquí o haz clic"}
-        </span>
+      <label className="w-full h-56 flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-2xl cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-all duration-300 group">
+        <div className="text-center">
+          {file ? (
+            <div className="flex flex-col items-center">
+              <span className="text-4xl mb-2">📁</span>
+              <span className="text-gray-700 font-medium text-lg">{file.name}</span>
+              <span className="text-gray-500 text-sm mt-1">Archivo seleccionado</span>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center">
+              <span className="text-6xl mb-4 group-hover:scale-110 transition-transform">📸</span>
+              <span className="text-gray-600 font-medium text-lg mb-2">
+                Arrastra tu imagen aquí o haz clic
+              </span>
+              <span className="text-gray-500 text-sm">
+                Soporta JPG, PNG, GIF, BMP, TIFF (máx. 10MB)
+              </span>
+            </div>
+          )}
+        </div>
         <input
           type="file"
           accept="image/*"
@@ -53,25 +69,43 @@ export default function UploadForm() {
       </label>
 
       {/* Selector de formato */}
-      <select
-        value={format}
-        onChange={(e) => setFormat(e.target.value)}
-        className="mt-4 border rounded-lg px-3 py-2 w-full focus:ring focus:ring-blue-300"
-      >
-        <option value="webp">WebP</option>
-        <option value="png">PNG</option>
-        <option value="jpeg">JPEG</option>
-        <option value="avif">AVIF</option>
-      </select>
+      <div className="w-full mt-6">
+        <label className="block text-gray-700 font-semibold mb-3 text-lg">
+          Formato de salida:
+        </label>
+        <select
+          value={format}
+          onChange={(e) => setFormat(e.target.value)}
+          className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+        >
+          <option value="webp">WebP - Ideal para web (menor tamaño)</option>
+          <option value="png">PNG - Con transparencia</option>
+          <option value="jpeg">JPEG - Para fotografías</option>
+          <option value="avif">AVIF - Máxima compresión</option>
+        </select>
+      </div>
 
       {/* Botón */}
       <button
         type="submit"
-        disabled={loading}
-        className="mt-4 w-full bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
+        disabled={loading || !file}
+        className="mt-8 w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white px-6 py-4 rounded-xl hover:from-blue-700 hover:to-purple-700 disabled:from-gray-400 disabled:to-gray-400 disabled:cursor-not-allowed transition-all duration-300 font-semibold text-lg shadow-lg hover:shadow-xl transform hover:scale-105 disabled:transform-none"
       >
-        {loading ? "Convirtiendo..." : "Convertir Imagen"}
+        {loading ? (
+          <div className="flex items-center justify-center">
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-3"></div>
+            Convirtiendo...
+          </div>
+        ) : (
+          "🚀 Convertir Imagen"
+        )}
       </button>
+      
+      {file && (
+        <p className="mt-4 text-gray-600 text-sm text-center">
+          ✨ Archivo listo para convertir a formato {format.toUpperCase()}
+        </p>
+      )}
     </form>
   );
 }

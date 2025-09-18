@@ -1,20 +1,9 @@
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Script from "next/script";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
 export const metadata = {
-  title: "Image Converter",
-  description: "Convierte tus imágenes fácil y rápido online",
+  title: "bzr-convert - Convertidor de Imágenes Online",
+  description: "Convierte tus imágenes a WebP, PNG, JPEG y AVIF de forma gratuita y rápida. Herramienta profesional para conversión de imágenes online.",
 };
 
 export default function RootLayout({ children }) {
@@ -29,9 +18,7 @@ export default function RootLayout({ children }) {
           strategy="afterInteractive"
         />
       </head>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-gray-50`}
-      >
+      <body className="antialiased bg-gray-50">
         {children}
       </body>
     </html>
