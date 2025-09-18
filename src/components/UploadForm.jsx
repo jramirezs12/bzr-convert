@@ -16,7 +16,7 @@ import {
 export default function UploadForm() {
   const inputRef = useRef(null);
   const [files, setFiles] = useState([]); // [{id, file, url}]
-  const [format, setFormat] = useState("webp");
+  const [format, setFormat] = useState("pdf"); // PDF por defecto
   const [dragActive, setDragActive] = useState(false);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
@@ -98,15 +98,17 @@ export default function UploadForm() {
     }
 
     setLoading(true);
+    const isPdf = format === "pdf";
     setStatus(
-      files.length > 1
-        ? `Convirtiendo ${files.length} imagen(es) y preparando ZIP…`
-        : `Convirtiendo imagen…`
+      isPdf
+        ? `Generando PDF con ${files.length} página(s)…`
+        : files.length > 1
+          ? `Convirtiendo ${files.length} imagen(es) y preparando ZIP…`
+          : `Convirtiendo imagen…`
     );
 
     try {
       const { blob, filename } = await convertBatch(files.map((f) => f.file), format);
-
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       a.download = filename;
@@ -127,11 +129,14 @@ export default function UploadForm() {
   const totalSize = files.reduce((acc, f) => acc + (f.file?.size || 0), 0);
   const activeFormat = FORMATS.find((f) => f.id === format)?.label || format.toUpperCase();
 
+  const isPdf = format === "pdf";
   const submitLabel = loading
     ? "Procesando…"
-    : files.length > 1
-      ? `Convertir ${files.length} a ${activeFormat} (ZIP)`
-      : `Convertir a ${activeFormat}`;
+    : isPdf
+      ? `Convertir ${files.length || ""} a PDF`.trim()
+      : files.length > 1
+        ? `Convertir ${files.length} a ${activeFormat} (ZIP)`
+        : `Convertir a ${activeFormat}`;
 
   return (
     <form
@@ -149,7 +154,8 @@ export default function UploadForm() {
       <fieldset className="w-full">
         <legend className="sr-only">Formato de salida</legend>
         <div className="w-full rounded-xl border border-gray-200/80 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-800/40 p-1.5">
-          <div className="grid grid-cols-4 gap-2">
+          {/* 5 opciones → 5 columnas en sm+ */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
             {FORMATS.map((opt) => {
               const active = format === opt.id;
               return (
@@ -311,8 +317,8 @@ export default function UploadForm() {
               </>
             ) : (
               <>
-                {/* Ícono ZIP solo cuando hay varias */}
-                {files.length > 1 ? <ZipIcon className="h-4 w-4" /> : null}
+                {/* Ícono ZIP solo si no es PDF y hay varias */}
+                {format !== "pdf" && files.length > 1 ? <ZipIcon className="h-4 w-4" /> : null}
                 {submitLabel}
               </>
             )}

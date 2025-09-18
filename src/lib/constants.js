@@ -12,10 +12,11 @@ export const SEO = {
 };
 
 export const FORMATS = [
+  { id: "pdf", label: "PDF", hint: "Unifica varias imágenes" },
   { id: "webp", label: "WebP", hint: "Ideal para web" },
   { id: "png", label: "PNG", hint: "Transparencias" },
   { id: "jpeg", label: "JPEG", hint: "Compatibilidad" },
-  { id: "avif", label: "AVIF", hint: "Compresión moderna" },
+  { id: "avif", label: "AVIF", hint: "Compresión moderna" }
 ];
 
 export const LIMITS = {

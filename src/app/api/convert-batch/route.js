@@ -1,10 +1,10 @@
 import JSZip from "jszip";
 import sharp from "sharp";
+import { PDFDocument } from "pdf-lib";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Límites prudentes (mantener alineados con el front)
 const MAX_FILES = 20;
 const MAX_FILE_SIZE = 8 * 1024 * 1024;   // 8 MB por archivo
 const MAX_TOTAL_SIZE = 80 * 1024 * 1024; // 80 MB por lote
@@ -15,12 +15,13 @@ const OUTPUT_MIME = {
   jpg: "image/jpeg",
   webp: "image/webp",
   avif: "image/avif",
+  pdf: "application/pdf",
 };
 
 export async function POST(req) {
   try {
     const form = await req.formData();
-    let format = String(form.get("format") || "webp").toLowerCase();
+    let format = String(form.get("format") || "pdf").toLowerCase();
     if (format === "jpg") format = "jpeg";
 
     // Recolectar archivos
@@ -30,15 +31,8 @@ export async function POST(req) {
         incoming.push(value);
       }
     }
-
-    if (incoming.length === 0) {
-      return jsonError(400, "No se recibieron imágenes.");
-    }
-
-    // Validaciones de límite
-    if (incoming.length > MAX_FILES) {
-      return jsonError(400, `Se permiten hasta ${MAX_FILES} archivos por subida.`);
-    }
+    if (!incoming.length) return jsonError(400, "No se recibieron imágenes.");
+    if (incoming.length > MAX_FILES) return jsonError(400, `Se permiten hasta ${MAX_FILES} archivos por subida.`);
 
     let totalSize = 0;
     const tooBig = [];
@@ -47,24 +41,31 @@ export async function POST(req) {
       totalSize += size;
       if (size > MAX_FILE_SIZE) tooBig.push(`${f.name || "archivo"} (${formatBytes(size)})`);
     }
-
-    if (tooBig.length > 0) {
+    if (tooBig.length) {
       return jsonError(
         400,
         `Cada archivo debe pesar como máximo ${formatBytes(MAX_FILE_SIZE)}. Superan el límite: ${tooBig.slice(0, 3).join(", ")}${tooBig.length > 3 ? "…" : ""}`
       );
     }
-
     if (totalSize > MAX_TOTAL_SIZE) {
-      return jsonError(
-        400,
-        `El lote completo supera ${formatBytes(MAX_TOTAL_SIZE)} (actual: ${formatBytes(totalSize)}). Reduce la cantidad o el tamaño.`
-      );
+      return jsonError(400, `El lote completo supera ${formatBytes(MAX_TOTAL_SIZE)} (actual: ${formatBytes(totalSize)}). Reduce la cantidad o el tamaño.`);
     }
 
-    // Conversión
+    // Caso PDF: combina todas las imágenes en un único PDF (1 página por imagen)
+    if (format === "pdf") {
+      const { pdfBytes, filename } = await imagesToSinglePdf(incoming);
+      return new Response(pdfBytes, {
+        status: 200,
+        headers: {
+          "Content-Type": OUTPUT_MIME.pdf,
+          "Content-Disposition": `attachment; filename="${filename}"`,
+          "Cache-Control": "no-store",
+        },
+      });
+    }
+
+    // Otros formatos: 1 imagen => archivo directo, 2+ => ZIP
     if (incoming.length === 1) {
-      // Devolver un SOLO archivo convertido directamente
       const file = incoming[0];
       const input = Buffer.from(await file.arrayBuffer());
       const output = await convertWithSharp(input, format);
@@ -84,9 +85,7 @@ export async function POST(req) {
       });
     }
 
-    // 2 o más: devolver ZIP
     const zip = new JSZip();
-
     let index = 0;
     for (const file of incoming) {
       index += 1;
@@ -115,7 +114,6 @@ export async function POST(req) {
       },
     });
   } catch (err) {
-    // Si Next devuelve 413 por límite de body
     if (String(err?.message || "").includes("Body exceeded")) {
       return jsonError(413, "La subida excede el límite del servidor. Intenta con menos archivos o reduce su tamaño.");
     }
@@ -124,8 +122,44 @@ export async function POST(req) {
   }
 }
 
+async function imagesToSinglePdf(files) {
+  const pdfDoc = await PDFDocument.create();
+  // Nombre: si hay una, hereda; si hay varias, "imagenes.pdf"
+  const first = files[0];
+  const firstBase = sanitizeFilename(String(first?.name || "imagen").replace(/\.[^.]+$/g, "")) || "imagen";
+  const filename = files.length === 1 ? `${firstBase}.pdf` : "imagenes.pdf";
+
+  for (const f of files) {
+    const input = Buffer.from(await f.arrayBuffer());
+
+    // Detecta si es jpg; si no, conviente a PNG para preservar transparencia.
+    const meta = await sharp(input).metadata();
+    const isJpeg = (meta.format || "").toLowerCase() === "jpeg" || (meta.format || "").toLowerCase() === "jpg";
+
+    const processed = isJpeg
+      ? await sharp(input).rotate().jpeg({ quality: 90 }).toBuffer()
+      : await sharp(input).rotate().png({ compressionLevel: 6 }).toBuffer();
+
+    const image = isJpeg
+      ? await pdfDoc.embedJpg(processed)
+      : await pdfDoc.embedPng(processed);
+
+    // Tamaño de la página igual al de la imagen integrada
+    const page = pdfDoc.addPage([image.width, image.height]);
+    page.drawImage(image, {
+      x: 0,
+      y: 0,
+      width: image.width,
+      height: image.height,
+    });
+  }
+
+  const pdfBytes = await pdfDoc.save();
+  return { pdfBytes, filename };
+}
+
 async function convertWithSharp(inputBuffer, format) {
-  let pipeline = sharp(inputBuffer, { failOn: "none" });
+  let pipeline = sharp(inputBuffer, { failOn: "none" }).rotate();
   switch (format) {
     case "png":
       pipeline = pipeline.png();
@@ -151,17 +185,12 @@ function jsonError(status, message) {
     headers: { "Content-Type": "application/json" },
   });
 }
-
 function formatBytes(bytes) {
   if (!bytes) return "0 B";
   const units = ["B", "KB", "MB", "GB"];
   const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
   return `${(bytes / Math.pow(1024, i)).toFixed(i ? 2 : 0)} ${units[i]}`;
 }
-
 function sanitizeFilename(name) {
-  return name
-    .replace(/[\\/:"*?<>|]+/g, "_")
-    .replace(/\s+/g, " ")
-    .trim();
+  return name.replace(/[\\/:"*?<>|]+/g, "_").replace(/\s+/g, " ").trim();
 }
