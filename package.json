@@ -4,12 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build",             
+    "build": "next build",
     "start": "next start",
     "lint": "eslint"
   },
   "engines": {
-    "node": "22.x" 
+    "node": "22.x"
   },
   "dependencies": {
     "@vercel/analytics": "^1.5.0",

@@ -1,7 +1,10 @@
-@import "tailwindcss";
+/* globals.css */
+
+/* Tailwind v4: importa preflight y utilidades */
 @import "tailwindcss/preflight";
 @import "tailwindcss/utilities";
 
+/* Variables y modo oscuro */
 :root {
   --background: #ffffff;
   --foreground: #171717;
