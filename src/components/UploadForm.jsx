@@ -98,18 +98,23 @@ export default function UploadForm() {
     }
 
     setLoading(true);
-    setStatus(`Convirtiendo ${files.length} imagen(es) y preparando ZIP…`);
+    setStatus(
+      files.length > 1
+        ? `Convirtiendo ${files.length} imagen(es) y preparando ZIP…`
+        : `Convirtiendo imagen…`
+    );
 
     try {
-      const blob = await convertBatch(files.map((f) => f.file), format);
+      const { blob, filename } = await convertBatch(files.map((f) => f.file), format);
+
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `convertidos_${format}.zip`;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       a.remove();
 
-      setStatus("ZIP descargado con éxito.");
+      setStatus("Descarga lista.");
     } catch (err) {
       console.error(err);
       setStatus(err.message || "Error en la conversión.");
@@ -121,6 +126,12 @@ export default function UploadForm() {
 
   const totalSize = files.reduce((acc, f) => acc + (f.file?.size || 0), 0);
   const activeFormat = FORMATS.find((f) => f.id === format)?.label || format.toUpperCase();
+
+  const submitLabel = loading
+    ? "Procesando…"
+    : files.length > 1
+      ? `Convertir ${files.length} a ${activeFormat} (ZIP)`
+      : `Convertir a ${activeFormat}`;
 
   return (
     <form
@@ -291,19 +302,18 @@ export default function UploadForm() {
               "focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-400 dark:focus-visible:ring-offset-gray-900",
               "min-h-[46px] min-w-[220px]",
             ].join(" ")}
-            title={`Convertir a ${activeFormat} (ZIP)`}
+            title={submitLabel}
           >
             {loading ? (
               <>
                 <Spinner className="h-4 w-4" />
-                Preparando ZIP…
+                Procesando…
               </>
             ) : (
               <>
-                <ZipIcon className="h-4 w-4" />
-                {files.length > 1
-                  ? `Convertir ${files.length} a ${activeFormat} (ZIP)`
-                  : `Convertir a ${activeFormat} (ZIP)`}
+                {/* Ícono ZIP solo cuando hay varias */}
+                {files.length > 1 ? <ZipIcon className="h-4 w-4" /> : null}
+                {submitLabel}
               </>
             )}
           </button>
