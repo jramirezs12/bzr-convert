@@ -4,19 +4,22 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build --turbopack",
+    "build": "next build",                 
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "postinstall": "npx --yes sharp install --force"  
+  },
+  "engines": {
+    "node": "20.x"                         
   },
   "dependencies": {
-    "@vercel/analytics": "^1.5.0",
     "@vercel/speed-insights": "^1.2.0",
     "jszip": "^3.10.1",
     "multer": "^2.0.2",
     "next": "15.5.3",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "sharp": "^0.34.4"
+    "sharp": "^0.34.4"                       
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

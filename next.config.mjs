@@ -5,6 +5,7 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: '80mb', // Debe ser >= MAX_TOTAL_SIZE del backend
     },
+    serverComponentsExternalPackages: ["sharp", "jszip"]
   },
 };
 
