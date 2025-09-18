@@ -1,77 +1,402 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState, useEffect } from "react";
+
+const formats = [
+  { id: "webp", label: "WebP", hint: "Ideal para web" },
+  { id: "png", label: "PNG", hint: "Transparencias" },
+  { id: "jpeg", label: "JPEG", hint: "Compatibilidad" },
+  { id: "avif", label: "AVIF", hint: "Compresión moderna" },
+];
+
+// Límites (alineados con el backend)
+const MAX_FILES = 20;
+const MAX_FILE_SIZE = 8 * 1024 * 1024;   // 8 MB por archivo
+const MAX_TOTAL_SIZE = 80 * 1024 * 1024; // 80 MB por lote
 
 export default function UploadForm() {
-  const [file, setFile] = useState(null);
+  const inputRef = useRef(null);
+  const [files, setFiles] = useState([]); // [{id, file, url}]
   const [format, setFormat] = useState("webp");
+  const [dragActive, setDragActive] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState("");
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!file) return alert("Selecciona un archivo");
+  useEffect(() => {
+    return () => files.forEach((f) => URL.revokeObjectURL(f.url));
+  }, [files]);
 
-    setLoading(true);
-
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("format", format);
-
-    const res = await fetch("/api/convert", {
-      method: "POST",
-      body: formData,
-    });
-
-    if (res.ok) {
-      const blob = await res.blob();
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = `convertido.${format}`;
-      link.click();
-    } else {
-      alert("Error al convertir la imagen");
+  const addFiles = (fileList) => {
+    const arr = Array.from(fileList || []);
+    const images = arr.filter((f) => f.type?.startsWith("image/"));
+    if (!images.length) {
+      setStatus("Solo se admiten imágenes.");
+      return;
     }
 
-    setLoading(false);
+    const currentCount = files.length;
+    const spaceLeft = Math.max(0, MAX_FILES - currentCount);
+    const accepted = images.slice(0, spaceLeft);
+
+    const tooLarge = accepted.filter((f) => f.size > MAX_FILE_SIZE);
+    const ok = accepted.filter((f) => f.size <= MAX_FILE_SIZE);
+
+    const newTotal =
+      files.reduce((acc, it) => acc + (it.file?.size || 0), 0) +
+      ok.reduce((acc, f) => acc + f.size, 0);
+
+    if (newTotal > MAX_TOTAL_SIZE) {
+      setStatus(`El lote superaría ${formatBytes(MAX_TOTAL_SIZE)}. Reduce la selección o el tamaño.`);
+      return;
+    }
+
+    const mapped = ok.map((f, i) => ({
+      id: `${Date.now()}_${i}_${f.name}`,
+      file: f,
+      url: URL.createObjectURL(f),
+    }));
+
+    setFiles((prev) => [...prev, ...mapped]);
+
+    if (images.length > spaceLeft) {
+      setStatus(`Se agregaron ${mapped.length} archivo(s). Límite: ${MAX_FILES}.`);
+    } else if (tooLarge.length > 0) {
+      setStatus(`Algunos archivos exceden ${formatBytes(MAX_FILE_SIZE)} y fueron omitidos (${tooLarge.length}).`);
+    } else {
+      setStatus("");
+    }
   };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files);
+  };
+
+  const removeOne = (id) => {
+    setFiles((prev) => {
+      const t = prev.find((p) => p.id === id);
+      if (t) URL.revokeObjectURL(t.url);
+      return prev.filter((p) => p.id !== id);
+    });
+  };
+
+  const clearAll = () => {
+    setFiles((prev) => {
+      prev.forEach((p) => URL.revokeObjectURL(p.url));
+      return [];
+    });
+    setStatus("");
+    if (inputRef.current) inputRef.current.value = "";
+  };
+
+  const handleSubmit = async (e) => {
+    e?.preventDefault?.();
+    if (!files.length) {
+      setStatus("Selecciona al menos una imagen.");
+      return;
+    }
+
+    setLoading(true);
+    setStatus(`Convirtiendo ${files.length} imagen(es) y preparando ZIP…`);
+
+    try {
+      const formData = new FormData();
+      formData.append("format", format);
+      files.forEach((f) => formData.append("files", f.file));
+
+      const res = await fetch("/api/convert-batch", { method: "POST", body: formData });
+
+      if (!res.ok) {
+        let msg = "No se pudo completar la conversión.";
+        if (res.status === 413) msg = "La subida excede el límite del servidor (80 MB).";
+        try {
+          const data = await res.json();
+          if (data?.error) msg = data.error;
+        } catch {}
+        throw new Error(msg);
+      }
+
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `convertidos_${format}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      setStatus("ZIP descargado con éxito.");
+    } catch (err) {
+      console.error(err);
+      setStatus(err.message || "Error en la conversión.");
+      alert(err.message || "Error en la conversión.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const totalSize = files.reduce((acc, f) => acc + (f.file?.size || 0), 0);
+  const activeFormat = formats.find((f) => f.id === format)?.label || format.toUpperCase();
 
   return (
     <form
       onSubmit={handleSubmit}
-      className="bg-white shadow-md rounded-2xl p-6 max-w-xl w-full flex flex-col items-center border border-gray-200"
+      className="w-full max-w-[720px] rounded-2xl border border-gray-200/70 dark:border-gray-800 bg-white/90 dark:bg-gray-900/90 shadow-lg backdrop-blur p-6 sm:p-7 flex flex-col gap-6"
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragActive(true);
+      }}
+      onDragLeave={() => setDragActive(false)}
+      onDrop={handleDrop}
     >
-      {/* Zona de drag & drop */}
-      <label className="w-full h-48 flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-blue-500 transition">
-        <span className="text-gray-500">
-          {file ? file.name : "Arrastra tu imagen aquí o haz clic"}
-        </span>
+      {/* 1) Formatos (sin cambios estructurales) */}
+      {/* 1) Formatos (centrados y con padding/altura consistente) */}
+<fieldset className="w-full">
+  <legend className="sr-only">Formato de salida</legend>
+  <div className="w-full rounded-xl border border-gray-200/80 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-800/40 p-1.5">
+    <div className="grid grid-cols-4 gap-2">
+      {formats.map((opt) => {
+        const active = format === opt.id;
+        return (
+          <label
+            key={opt.id}
+            className={[
+              // ancho completo de la celda + centrado perfecto
+              "w-full relative cursor-pointer select-none rounded-lg",
+              "px-4 py-2.5 sm:py-3 text-center text-[15px] font-semibold transition",
+              "flex flex-col items-center justify-center gap-0.5",
+              "min-h-[52px] sm:min-h-[58px]",
+              active
+                ? "bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm ring-1 ring-blue-500"
+                : "text-gray-700 dark:text-gray-200 hover:bg-white/70 dark:hover:bg-gray-900/60",
+            ].join(" ")}
+          >
+            <input
+              type="radio"
+              name="format"
+              value={opt.id}
+              className="sr-only"
+              checked={active}
+              onChange={() => setFormat(opt.id)}
+            />
+            {opt.label}
+            <span className="text-[11px] leading-3 font-normal text-gray-500 dark:text-gray-400">
+              {active ? opt.hint : " "}
+            </span>
+          </label>
+        );
+      })}
+    </div>
+  </div>
+</fieldset>
+
+      {/* 2) Dropzone / Previews */}
+      <div
+        className={[
+          "relative w-full rounded-xl border-2 border-dashed transition bg-white/40 dark:bg-gray-800/30",
+          dragActive
+            ? "border-blue-500 bg-blue-50/60 dark:bg-blue-950/20"
+            : "border-gray-300 dark:border-gray-700 hover:border-blue-400",
+        ].join(" ")}
+      >
+        {files.length === 0 ? (
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            className="w-full h-52 sm:h-60 rounded-xl flex flex-col items-center justify-center gap-3 text-gray-600 dark:text-gray-300"
+          >
+            <UploadIcon className="h-7 w-7 opacity-80" />
+            <span className="text-center text-sm">
+              Arrastra tus imágenes aquí o haz clic para seleccionarlas
+            </span>
+            <span className="text-[11px] text-gray-400 dark:text-gray-500">
+              Hasta {MAX_FILES} imágenes • Máx {formatBytes(MAX_FILE_SIZE)} c/u • Máx {formatBytes(MAX_TOTAL_SIZE)} por lote
+            </span>
+          </button>
+        ) : (
+          <div className="p-4 sm:p-5">
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-4">
+              {files.map((item) => (
+                <figure
+                  key={item.id}
+                  className="group relative rounded-md overflow-hidden border border-gray-200/70 dark:border-gray-700 bg-gray-50 dark:bg-gray-800"
+                  title={item.file.name}
+                >
+                  <img src={item.url} alt={item.file.name} className="h-24 w-full object-cover" />
+                  <figcaption className="px-2 py-1 text-[11px] text-gray-600 dark:text-gray-300 truncate">
+                    {item.file.name}
+                  </figcaption>
+                  <button
+                    type="button"
+                    onClick={() => removeOne(item.id)}
+                    className="absolute top-1 right-1 inline-flex items-center justify-center h-6 w-6 rounded-full bg-black/60 text-white hover:bg-black/75"
+                    aria-label="Quitar imagen"
+                    title="Quitar"
+                  >
+                    <CloseIcon className="h-3.5 w-3.5" />
+                  </button>
+                </figure>
+              ))}
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-gray-600 dark:text-gray-400">
+              <span className="inline-flex items-center gap-2">
+                <ImageStackIcon className="h-4 w-4" />
+                {files.length}/{MAX_FILES} seleccionadas
+              </span>
+              <span>{formatBytes(totalSize)} / {formatBytes(MAX_TOTAL_SIZE)}</span>
+            </div>
+          </div>
+        )}
+
         <input
+          ref={inputRef}
+          id="file-input"
           type="file"
           accept="image/*"
+          multiple
           className="hidden"
-          onChange={(e) => setFile(e.target.files[0])}
+          onChange={(e) => addFiles(e.target.files)}
         />
-      </label>
+      </div>
 
-      {/* Selector de formato */}
-      <select
-        value={format}
-        onChange={(e) => setFormat(e.target.value)}
-        className="mt-4 border rounded-lg px-3 py-2 w-full focus:ring focus:ring-blue-300"
-      >
-        <option value="webp">WebP</option>
-        <option value="png">PNG</option>
-        <option value="jpeg">JPEG</option>
-        <option value="avif">AVIF</option>
-      </select>
+      {/* 3) Acciones: centradas y con padding interno (no se tocan los bordes) */}
+      <div className="pt-2">
+        <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center gap-3 sm:gap-4 px-3 sm:px-4">
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            className={[
+              "w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-lg px-6 py-3.5 text-[15px] font-semibold text-white",
+              "bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 active:from-cyan-700 active:to-blue-700",
+              "shadow-md shadow-cyan-600/25 dark:shadow-cyan-900/30",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-cyan-400 dark:focus-visible:ring-offset-gray-900",
+              "min-h-[46px] min-w-[200px]",
+            ].join(" ")}
+            title="Agregar imágenes"
+          >
+            <FolderIcon className="h-4 w-4" />
+            Agregar imágenes
+          </button>
 
-      {/* Botón */}
-      <button
-        type="submit"
-        disabled={loading}
-        className="mt-4 w-full bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
-      >
-        {loading ? "Convirtiendo..." : "Convertir Imagen"}
-      </button>
+          {files.length > 0 && (
+            <button
+              type="button"
+              onClick={clearAll}
+              className={[
+                "w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-lg px-6 py-3.5 text-[15px] font-semibold",
+                "text-rose-700 dark:text-rose-300 border border-rose-300/70 dark:border-rose-700",
+                "hover:bg-rose-50 active:bg-rose-100 dark:hover:bg-rose-900/30 dark:active:bg-rose-900/40",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-rose-400 dark:focus-visible:ring-offset-gray-900",
+                "min-h-[46px] min-w-[140px]",
+              ].join(" ")}
+              title="Limpiar selección"
+            >
+              <TrashIcon className="h-4 w-4" />
+              Limpiar
+            </button>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading || files.length === 0}
+            className={[
+              "w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-lg px-6 py-3.5 text-[15px] font-semibold text-white",
+              "bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:from-blue-500 hover:via-indigo-500 hover:to-violet-500 active:from-blue-700 active:via-indigo-700 active:to-violet-700",
+              "disabled:from-gray-400 disabled:via-gray-400 disabled:to-gray-400 disabled:cursor-not-allowed",
+              "shadow-md shadow-blue-600/25 dark:shadow-indigo-900/30",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-400 dark:focus-visible:ring-offset-gray-900",
+              "min-h-[46px] min-w-[220px]",
+            ].join(" ")}
+            title={`Convertir a ${activeFormat} (ZIP)`}
+          >
+            {loading ? (
+              <>
+                <Spinner className="h-4 w-4" />
+                Preparando ZIP…
+              </>
+            ) : (
+              <>
+                <ZipIcon className="h-4 w-4" />
+                {files.length > 1
+                  ? `Convertir ${files.length} a ${activeFormat} (ZIP)`
+                  : `Convertir a ${activeFormat} (ZIP)`}
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* 4) Estado/ayuda */}
+      <p className="text-center text-xs text-gray-500 dark:text-gray-400 min-h-[1rem]" aria-live="polite">
+        {status}
+      </p>
     </form>
+  );
+}
+
+/* Utilidades */
+function formatBytes(bytes) {
+  if (!bytes) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  return `${(bytes / Math.pow(1024, i)).toFixed(i ? 2 : 0)} ${units[i]}`;
+}
+
+/* Iconos inline (sin dependencias) */
+function UploadIcon(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...props}>
+      <path strokeWidth="1.5" d="M12 16V4m0 0l-4 4m4-4l4 4" />
+      <path strokeWidth="1.5" d="M20 16v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3" />
+    </svg>
+  );
+}
+function Spinner(props) {
+  return (
+    <svg viewBox="0 0 24 24" className="animate-spin" {...props}>
+      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" fill="none" />
+      <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" className="opacity-90" fill="none" />
+    </svg>
+  );
+}
+function CloseIcon(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...props}>
+      <path strokeWidth="1.5" d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  );
+}
+function FolderIcon(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...props}>
+      <path strokeWidth="1.5" d="M3 7h6l2 2h10v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
+    </svg>
+  );
+}
+function ZipIcon(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...props}>
+      <path strokeWidth="1.5" d="M8 3h8a2 2 0 0 1 2 2v14l-6 2-6-2V5a2 2 0 0 1 2-2z" />
+      <path strokeWidth="1.5" d="M12 7v2m0 2v2m0 2v2" />
+    </svg>
+  );
+}
+function TrashIcon(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...props}>
+      <path strokeWidth="1.5" d="M4 7h16M10 11v6m4-6v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7l1-2h4l1 2" />
+    </svg>
+  );
+}
+function ImageStackIcon(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...props}>
+      <path strokeWidth="1.5" d="M4 7h16v10H4z" />
+      <path strokeWidth="1.5" d="M2 9h16v10H2z" />
+      <circle cx="9" cy="12" r="1.5" />
+      <path strokeWidth="1.5" d="M6 17l4-4 3 3 2-2 3 3" />
+    </svg>
   );
 }
