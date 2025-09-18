@@ -1,17 +1,9 @@
 "use client";
-import { useEffect, useState } from "react";
+import { ENV } from "@/lib/env";
+import { useAdsense } from "@/hooks/useAdsense";
 
 export default function AdBanner() {
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    try {
-      (window.adsbygoogle = window.adsbygoogle || []).push({});
-    } catch (e) {
-      setFailed(true);
-      console.warn("No se pudo cargar AdSense:", e);
-    }
-  }, []);
+  const { failed } = useAdsense();
 
   return (
     <div className="w-full flex justify-center">
@@ -19,9 +11,9 @@ export default function AdBanner() {
         <ins
           className="adsbygoogle"
           style={{ display: "block", width: "100%", height: "100%" }}
-          data-ad-client="ca-pub-0000000000000000"
-          data-ad-slot="1234567890"
-          data-adtest="on"
+          data-ad-client={ENV.ADSENSE_CLIENT}
+          data-ad-slot={ENV.ADSENSE_SLOT}
+          data-adtest={ENV.ADSENSE_TEST ? "on" : undefined}
           data-full-width-responsive="true"
         />
         {failed && (

@@ -1,17 +1,17 @@
 "use client";
 import { useRef, useState, useEffect } from "react";
-
-const formats = [
-  { id: "webp", label: "WebP", hint: "Ideal para web" },
-  { id: "png", label: "PNG", hint: "Transparencias" },
-  { id: "jpeg", label: "JPEG", hint: "Compatibilidad" },
-  { id: "avif", label: "AVIF", hint: "Compresión moderna" },
-];
-
-// Límites (alineados con el backend)
-const MAX_FILES = 20;
-const MAX_FILE_SIZE = 8 * 1024 * 1024;   // 8 MB por archivo
-const MAX_TOTAL_SIZE = 80 * 1024 * 1024; // 80 MB por lote
+import { FORMATS, LIMITS } from "@/lib/constants";
+import { formatBytes } from "@/lib/format";
+import { convertBatch } from "@/services/conversion";
+import {
+  UploadIcon,
+  Spinner,
+  CloseIcon,
+  FolderIcon,
+  ZipIcon,
+  TrashIcon,
+  ImageStackIcon,
+} from "@/components/icons/Icons";
 
 export default function UploadForm() {
   const inputRef = useRef(null);
@@ -34,18 +34,18 @@ export default function UploadForm() {
     }
 
     const currentCount = files.length;
-    const spaceLeft = Math.max(0, MAX_FILES - currentCount);
+    const spaceLeft = Math.max(0, LIMITS.MAX_FILES - currentCount);
     const accepted = images.slice(0, spaceLeft);
 
-    const tooLarge = accepted.filter((f) => f.size > MAX_FILE_SIZE);
-    const ok = accepted.filter((f) => f.size <= MAX_FILE_SIZE);
+    const tooLarge = accepted.filter((f) => f.size > LIMITS.MAX_FILE_SIZE);
+    const ok = accepted.filter((f) => f.size <= LIMITS.MAX_FILE_SIZE);
 
     const newTotal =
       files.reduce((acc, it) => acc + (it.file?.size || 0), 0) +
       ok.reduce((acc, f) => acc + f.size, 0);
 
-    if (newTotal > MAX_TOTAL_SIZE) {
-      setStatus(`El lote superaría ${formatBytes(MAX_TOTAL_SIZE)}. Reduce la selección o el tamaño.`);
+    if (newTotal > LIMITS.MAX_TOTAL_SIZE) {
+      setStatus(`El lote superaría ${formatBytes(LIMITS.MAX_TOTAL_SIZE)}. Reduce la selección o el tamaño.`);
       return;
     }
 
@@ -58,9 +58,9 @@ export default function UploadForm() {
     setFiles((prev) => [...prev, ...mapped]);
 
     if (images.length > spaceLeft) {
-      setStatus(`Se agregaron ${mapped.length} archivo(s). Límite: ${MAX_FILES}.`);
+      setStatus(`Se agregaron ${mapped.length} archivo(s). Límite: ${LIMITS.MAX_FILES}.`);
     } else if (tooLarge.length > 0) {
-      setStatus(`Algunos archivos exceden ${formatBytes(MAX_FILE_SIZE)} y fueron omitidos (${tooLarge.length}).`);
+      setStatus(`Algunos archivos exceden ${formatBytes(LIMITS.MAX_FILE_SIZE)} y fueron omitidos (${tooLarge.length}).`);
     } else {
       setStatus("");
     }
@@ -101,23 +101,7 @@ export default function UploadForm() {
     setStatus(`Convirtiendo ${files.length} imagen(es) y preparando ZIP…`);
 
     try {
-      const formData = new FormData();
-      formData.append("format", format);
-      files.forEach((f) => formData.append("files", f.file));
-
-      const res = await fetch("/api/convert-batch", { method: "POST", body: formData });
-
-      if (!res.ok) {
-        let msg = "No se pudo completar la conversión.";
-        if (res.status === 413) msg = "La subida excede el límite del servidor (80 MB).";
-        try {
-          const data = await res.json();
-          if (data?.error) msg = data.error;
-        } catch {}
-        throw new Error(msg);
-      }
-
-      const blob = await res.blob();
+      const blob = await convertBatch(files.map((f) => f.file), format);
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       a.download = `convertidos_${format}.zip`;
@@ -136,7 +120,7 @@ export default function UploadForm() {
   };
 
   const totalSize = files.reduce((acc, f) => acc + (f.file?.size || 0), 0);
-  const activeFormat = formats.find((f) => f.id === format)?.label || format.toUpperCase();
+  const activeFormat = FORMATS.find((f) => f.id === format)?.label || format.toUpperCase();
 
   return (
     <form
@@ -150,46 +134,44 @@ export default function UploadForm() {
       onDragLeave={() => setDragActive(false)}
       onDrop={handleDrop}
     >
-      {/* 1) Formatos (sin cambios estructurales) */}
-      {/* 1) Formatos (centrados y con padding/altura consistente) */}
-<fieldset className="w-full">
-  <legend className="sr-only">Formato de salida</legend>
-  <div className="w-full rounded-xl border border-gray-200/80 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-800/40 p-1.5">
-    <div className="grid grid-cols-4 gap-2">
-      {formats.map((opt) => {
-        const active = format === opt.id;
-        return (
-          <label
-            key={opt.id}
-            className={[
-              // ancho completo de la celda + centrado perfecto
-              "w-full relative cursor-pointer select-none rounded-lg",
-              "px-4 py-2.5 sm:py-3 text-center text-[15px] font-semibold transition",
-              "flex flex-col items-center justify-center gap-0.5",
-              "min-h-[52px] sm:min-h-[58px]",
-              active
-                ? "bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm ring-1 ring-blue-500"
-                : "text-gray-700 dark:text-gray-200 hover:bg-white/70 dark:hover:bg-gray-900/60",
-            ].join(" ")}
-          >
-            <input
-              type="radio"
-              name="format"
-              value={opt.id}
-              className="sr-only"
-              checked={active}
-              onChange={() => setFormat(opt.id)}
-            />
-            {opt.label}
-            <span className="text-[11px] leading-3 font-normal text-gray-500 dark:text-gray-400">
-              {active ? opt.hint : " "}
-            </span>
-          </label>
-        );
-      })}
-    </div>
-  </div>
-</fieldset>
+      {/* 1) Formatos */}
+      <fieldset className="w-full">
+        <legend className="sr-only">Formato de salida</legend>
+        <div className="w-full rounded-xl border border-gray-200/80 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-800/40 p-1.5">
+          <div className="grid grid-cols-4 gap-2">
+            {FORMATS.map((opt) => {
+              const active = format === opt.id;
+              return (
+                <label
+                  key={opt.id}
+                  className={[
+                    "w-full relative cursor-pointer select-none rounded-lg",
+                    "px-4 py-2.5 sm:py-3 text-center text-[15px] font-semibold transition",
+                    "flex flex-col items-center justify-center gap-0.5",
+                    "min-h-[52px] sm:min-h-[58px]",
+                    active
+                      ? "bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm ring-1 ring-blue-500"
+                      : "text-gray-700 dark:text-gray-200 hover:bg-white/70 dark:hover:bg-gray-900/60",
+                  ].join(" ")}
+                >
+                  <input
+                    type="radio"
+                    name="format"
+                    value={opt.id}
+                    className="sr-only"
+                    checked={active}
+                    onChange={() => setFormat(opt.id)}
+                  />
+                  {opt.label}
+                  <span className="text-[11px] leading-3 font-normal text-gray-500 dark:text-gray-400">
+                    {active ? opt.hint : " "}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      </fieldset>
 
       {/* 2) Dropzone / Previews */}
       <div
@@ -211,7 +193,7 @@ export default function UploadForm() {
               Arrastra tus imágenes aquí o haz clic para seleccionarlas
             </span>
             <span className="text-[11px] text-gray-400 dark:text-gray-500">
-              Hasta {MAX_FILES} imágenes • Máx {formatBytes(MAX_FILE_SIZE)} c/u • Máx {formatBytes(MAX_TOTAL_SIZE)} por lote
+              Hasta {LIMITS.MAX_FILES} imágenes • Máx {formatBytes(LIMITS.MAX_FILE_SIZE)} c/u • Máx {formatBytes(LIMITS.MAX_TOTAL_SIZE)} por lote
             </span>
           </button>
         ) : (
@@ -243,9 +225,9 @@ export default function UploadForm() {
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-gray-600 dark:text-gray-400">
               <span className="inline-flex items-center gap-2">
                 <ImageStackIcon className="h-4 w-4" />
-                {files.length}/{MAX_FILES} seleccionadas
+                {files.length}/{LIMITS.MAX_FILES} seleccionadas
               </span>
-              <span>{formatBytes(totalSize)} / {formatBytes(MAX_TOTAL_SIZE)}</span>
+              <span>{formatBytes(totalSize)} / {formatBytes(LIMITS.MAX_TOTAL_SIZE)}</span>
             </div>
           </div>
         )}
@@ -261,7 +243,7 @@ export default function UploadForm() {
         />
       </div>
 
-      {/* 3) Acciones: centradas y con padding interno (no se tocan los bordes) */}
+      {/* 3) Acciones */}
       <div className="pt-2">
         <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center gap-3 sm:gap-4 px-3 sm:px-4">
           <button
@@ -333,70 +315,5 @@ export default function UploadForm() {
         {status}
       </p>
     </form>
-  );
-}
-
-/* Utilidades */
-function formatBytes(bytes) {
-  if (!bytes) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-  return `${(bytes / Math.pow(1024, i)).toFixed(i ? 2 : 0)} ${units[i]}`;
-}
-
-/* Iconos inline (sin dependencias) */
-function UploadIcon(props) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...props}>
-      <path strokeWidth="1.5" d="M12 16V4m0 0l-4 4m4-4l4 4" />
-      <path strokeWidth="1.5" d="M20 16v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3" />
-    </svg>
-  );
-}
-function Spinner(props) {
-  return (
-    <svg viewBox="0 0 24 24" className="animate-spin" {...props}>
-      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" fill="none" />
-      <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" className="opacity-90" fill="none" />
-    </svg>
-  );
-}
-function CloseIcon(props) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...props}>
-      <path strokeWidth="1.5" d="M6 6l12 12M18 6L6 18" />
-    </svg>
-  );
-}
-function FolderIcon(props) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...props}>
-      <path strokeWidth="1.5" d="M3 7h6l2 2h10v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
-    </svg>
-  );
-}
-function ZipIcon(props) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...props}>
-      <path strokeWidth="1.5" d="M8 3h8a2 2 0 0 1 2 2v14l-6 2-6-2V5a2 2 0 0 1 2-2z" />
-      <path strokeWidth="1.5" d="M12 7v2m0 2v2m0 2v2" />
-    </svg>
-  );
-}
-function TrashIcon(props) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...props}>
-      <path strokeWidth="1.5" d="M4 7h16M10 11v6m4-6v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7l1-2h4l1 2" />
-    </svg>
-  );
-}
-function ImageStackIcon(props) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...props}>
-      <path strokeWidth="1.5" d="M4 7h16v10H4z" />
-      <path strokeWidth="1.5" d="M2 9h16v10H2z" />
-      <circle cx="9" cy="12" r="1.5" />
-      <path strokeWidth="1.5" d="M6 17l4-4 3 3 2-2 3 3" />
-    </svg>
   );
 }
