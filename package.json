@@ -4,13 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build",                 
+    "build": "next build",             
     "start": "next start",
-    "lint": "eslint",
-    "postinstall": "npx --yes sharp install --force"  
+    "lint": "eslint"
   },
   "engines": {
-    "node": "20.x"                         
+    "node": "22.x" 
   },
   "dependencies": {
     "@vercel/speed-insights": "^1.2.0",
@@ -19,7 +18,7 @@
     "next": "15.5.3",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "sharp": "^0.34.4"                       
+    "sharp": "^0.34.4"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
