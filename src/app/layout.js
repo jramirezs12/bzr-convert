@@ -39,6 +39,8 @@ export default function RootLayout({ children }) {
           )}`}
           crossOrigin="anonymous"
         />
+        <script src="https://analytics.ahrefs.com/analytics.js" data-key="rj8SZwvhYGP/WmPe5XEDaQ" async></script>
+        
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <div className="min-h-dvh flex flex-col">
