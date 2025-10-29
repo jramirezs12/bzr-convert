@@ -40,6 +40,8 @@ export default function RootLayout({ children }) {
           crossOrigin="anonymous"
         />
         <script src="https://analytics.ahrefs.com/analytics.js" data-key="rj8SZwvhYGP/WmPe5XEDaQ" async></script>
+        <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1997080032223631"
+     crossorigin="anonymous"></script>
         
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
