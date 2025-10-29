@@ -3,7 +3,7 @@
 export const APP = {
   name: "Image Converter",
   author: "jramirezs12",
-  supportEmail: "contacto@tu-dominio.com",
+  supportEmail: "jramirezs12@ucentral.edu.co",
 };
 
 export const SEO = {

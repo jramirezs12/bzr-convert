@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { APP } from "@/lib/constants";
 
 export default function Footer() {
@@ -7,7 +8,23 @@ export default function Footer() {
       id="contacto"
     >
       <div className="w-full flex justify-center">
-        <div className="w-full max-w-[720px] px-4 py-8 flex flex-col items-center gap-2 text-center">
+        <div className="w-full max-w-[720px] px-4 py-8 flex flex-col items-center gap-4 text-center">
+          {/* Navegación legal/estática */}
+          <nav className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-gray-600 dark:text-gray-300">
+            <Link href="/blog" className="hover:text-gray-900 dark:hover:text-white">
+              Blog
+            </Link>
+            <Link href="/privacidad" className="hover:text-gray-900 dark:hover:text-white">
+              Política de Privacidad
+            </Link>
+            <Link href="/terminos" className="hover:text-gray-900 dark:hover:text-white">
+              Términos y Condiciones
+            </Link>
+            <Link href="/acerca" className="hover:text-gray-900 dark:hover:text-white">
+              Acerca de
+            </Link>
+          </nav>
+
           <p className="text-sm text-gray-600 dark:text-gray-300">
             ¿Dudas o sugerencias? Escríbenos a{" "}
             <a
